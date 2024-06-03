@@ -4,10 +4,17 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
+import numpy
 
 
 class OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
+
+    waypoints = np.array([  [[0,0,-5],[0,0,-5]],
+                            [[0,0,-5],[0,0,-5]],
+                            [[0,0,-5],[0,0,-5]],
+                            [[0,0,-5],[0,0,-5]],
+                            [[0,0,-5],[0,0,-5]]])
 
     def __init__(self) -> None:
         super().__init__('offboard_control_takeoff_and_land')
