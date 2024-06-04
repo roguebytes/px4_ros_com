@@ -4,17 +4,12 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
-import numpy
+import numpy as np
+import time
 
 
 class OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
-
-    waypoints = np.array([  [[0,0,-5],[0,0,-5]],
-                            [[0,0,-5],[0,0,-5]],
-                            [[0,0,-5],[0,0,-5]],
-                            [[0,0,-5],[0,0,-5]],
-                            [[0,0,-5],[0,0,-5]]])
 
     def __init__(self) -> None:
         super().__init__('offboard_control_takeoff_and_land')
@@ -46,6 +41,16 @@ class OffboardControl(Node):
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.takeoff_height = -5.0
+
+        self.waypoints = np.array([ [0.0,0.0,self.takeoff_height],
+                                    [0.0,10.0,-5.0],
+                                    [10.0,0.0,-5.0],
+                                    [0.0,-10.0,-5.0],
+                                    [-10.0,0.0,-5.0]])
+    
+        self.lastWaypointUpdate = 0          # timestamp in milliseconds when the last waypoint was issued
+        self.waypointUpdateDelay = 20     # delay between waypoint updates in milliseconds
+        self.waypointIndex = 0               # The CURRENT index in the waypoint array
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -124,20 +129,40 @@ class OffboardControl(Node):
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
 
+        # Position Update Timestamp
+        positionUpdateTimestamp = time.time()
+        print('positionUpdateTimestamp = ' + str(positionUpdateTimestamp))
+        print('lastWaypointUpdate = ' + str(self.lastWaypointUpdate))
+
+        if positionUpdateTimestamp > (self.lastWaypointUpdate + self.waypointUpdateDelay):
+            print('Moving to next waypoint!')
+            if self.waypointIndex < len(self.waypoints):
+                newWaypoint = self.waypoints[self.waypointIndex]
+                self.publish_position_setpoint(newWaypoint[0], newWaypoint[1], newWaypoint[2])
+                # Position Update Timestamp
+                self.lastWaypointUpdate = time.time()
+                # Update waypoint index
+                self.waypointIndex += 1
+            else:
+                # return to first waypoint & land
+                newWaypoint = self.waypoints[0]
+                self.publish_position_setpoint(newWaypoint[0], newWaypoint[1], newWaypoint[2])
+                self.land()
+                exit(0)
+
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
-        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
+        # if self.vehicle_local_position.z > (self.takeoff_height + 1.0) and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+        #     self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
 
-        elif self.vehicle_local_position.z <= self.takeoff_height:
-            self.land()
-            exit(0)
+        # elif self.vehicle_local_position.z <= self.takeoff_height:
+        #     self.land()
+        #     exit(0)
 
         if self.offboard_setpoint_counter < 11:
             self.offboard_setpoint_counter += 1
-
 
 def main(args=None) -> None:
     print('Starting offboard control node...')
