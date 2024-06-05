@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
-
+import numpy as np
 
 class OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
@@ -39,6 +39,22 @@ class OffboardControl(Node):
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.takeoff_height = -5.0
+        self.landing_height = -0.5
+        self.takeoff_complete = False
+        self.should_initiate_landing = False
+        self.is_landed = True
+
+        self.waypoints = np.array([ [0.0,0.0,self.takeoff_height],
+                                    [0.0,10.0,-6.0],
+                                    [10.0,0.0,-6.0],
+                                    [0.0,-10.0,-6.0],
+                                    [-10.0,0.0,-6.0],
+                                    [0.0,0.0,-6.0],
+                                    [0.0,0.0,self.landing_height]])
+    
+        self.lastWaypointUpdate = 0          # timestamp in milliseconds when the last waypoint was issued
+        self.waypointUpdateDelay = 8        # delay between waypoint updates in seconds
+        self.waypointIndex = 0               # The CURRENT index in the waypoint array
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -123,8 +139,10 @@ class OffboardControl(Node):
 
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
-
-        elif self.vehicle_local_position.z <= self.takeoff_height:
+        elif self.vehicle_local_position.z == self.takeoff_height:
+            self.takeoff_complete = true
+            print('Start waypoint navigation')
+        elif self.should_initiate_landing:
             self.land()
             exit(0)
 
