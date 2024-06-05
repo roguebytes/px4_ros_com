@@ -139,9 +139,9 @@ class OffboardControl(Node):
 
         if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
-        elif self.vehicle_local_position.z == self.takeoff_height:
-            self.takeoff_complete = true
-            print('Start waypoint navigation')
+        # elif self.vehicle_local_position.z == self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+        #     self.takeoff_complete = true
+        #     print('Start waypoint navigation')
         elif self.should_initiate_landing:
             self.land()
             exit(0)
