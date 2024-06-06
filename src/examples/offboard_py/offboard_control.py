@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLocalPosition, VehicleStatus
-
+import numpy as np
 
 class OffboardControl(Node):
     """Node for controlling a vehicle in offboard mode."""
@@ -39,6 +39,22 @@ class OffboardControl(Node):
         self.vehicle_local_position = VehicleLocalPosition()
         self.vehicle_status = VehicleStatus()
         self.takeoff_height = -5.0
+        self.landing_height = -0.5
+        self.takeoff_complete = False
+        self.should_initiate_landing = False
+        self.is_landed = True
+
+        self.waypoints = np.array([ [0.0,0.0,self.takeoff_height],
+                                    [0.0,10.0,-6.0],
+                                    [10.0,0.0,-6.0],
+                                    [0.0,-10.0,-6.0],
+                                    [-10.0,0.0,-6.0],
+                                    [0.0,0.0,-6.0],
+                                    [0.0,0.0,self.landing_height]])
+    
+        self.lastWaypointUpdate = 0          # timestamp in milliseconds when the last waypoint was issued
+        self.waypointUpdateDelay = 8        # delay between waypoint updates in seconds
+        self.waypointIndex = 0               # The CURRENT index in the waypoint array
 
         # Create a timer to publish control commands
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -92,7 +108,7 @@ class OffboardControl(Node):
         msg.yaw = 1.57079  # (90 degree)
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
-        self.get_logger().info(f"Publishing position setpoints {[x, y, z]}")
+        #self.get_logger().info(f"Publishing position setpoints {[x, y, z]}")
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""
@@ -117,19 +133,52 @@ class OffboardControl(Node):
         """Callback function for the timer."""
         self.publish_offboard_control_heartbeat_signal()
 
+        # DEBUG
+        if self.offboard_setpoint_counter % 10 == 0:
+            print('offboard_setpoint_counter is ' + str(self.offboard_setpoint_counter))
+            print('VehicleStatus is ' + str(self.vehicle_status.nav_state))
+            print('Vehicle local z-position is ' + str(self.vehicle_local_position.z))
+        
         if self.offboard_setpoint_counter == 10:
             self.engage_offboard_mode()
             self.arm()
 
-        if self.vehicle_local_position.z > self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-            self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
-
-        elif self.vehicle_local_position.z <= self.takeoff_height:
+        if self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD and not self.should_initiate_landing:
+            if self.offboard_setpoint_counter < 200:
+                self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
+                if self.offboard_setpoint_counter % 10 == 0:
+                    self.get_logger().info(f"Publishing position setpoints {[0.0, 0.0, self.takeoff_height]}")
+            elif self.offboard_setpoint_counter >= 200 and self.offboard_setpoint_counter < 400:
+                self.publish_position_setpoint(5.0, 0.0, self.takeoff_height)
+                if self.offboard_setpoint_counter % 10 == 0:
+                    self.get_logger().info(f"Publishing position setpoints {[5.0, 0.0, self.takeoff_height]}")
+            elif self.offboard_setpoint_counter >= 400 and self.offboard_setpoint_counter < 600:
+                self.publish_position_setpoint(0.0, 5.0, self.takeoff_height)
+                if self.offboard_setpoint_counter % 10 == 0:
+                    self.get_logger().info(f"Publishing position setpoints {[0.0, 5.0, self.takeoff_height]}")
+            elif self.offboard_setpoint_counter >= 600 and self.offboard_setpoint_counter < 800:
+                self.publish_position_setpoint(-5.0, 0.0, self.takeoff_height)
+                if self.offboard_setpoint_counter % 10 == 0:
+                    self.get_logger().info(f"Publishing position setpoints {[-5.0, 0.0, self.takeoff_height]}")
+            elif self.offboard_setpoint_counter >= 1000 and self.offboard_setpoint_counter < 1200:
+                self.publish_position_setpoint(0.0, -5.0, self.takeoff_height)
+                if self.offboard_setpoint_counter % 10 == 0:
+                    self.get_logger().info(f"Publishing position setpoints {[0.0, -5.0, self.takeoff_height]}")
+            elif self.offboard_setpoint_counter >= 1200 and self.offboard_setpoint_counter < 1400:
+                self.publish_position_setpoint(0.0, 0.0, self.takeoff_height)
+                if self.offboard_setpoint_counter % 10 == 0:
+                    self.get_logger().info(f"Publishing position setpoints {[0.0, -5.0, self.takeoff_height]}")
+            elif self.offboard_setpoint_counter >= 1400:
+                self.should_initiate_landing = True
+        # elif self.vehicle_local_position.z == self.takeoff_height and self.vehicle_status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+        #     self.takeoff_complete = true
+        #     print('Start waypoint navigation')
+        elif self.should_initiate_landing:
             self.land()
             exit(0)
 
-        if self.offboard_setpoint_counter < 11:
-            self.offboard_setpoint_counter += 1
+        # if self.offboard_setpoint_counter < 11:
+        self.offboard_setpoint_counter += 1
 
 
 def main(args=None) -> None:
